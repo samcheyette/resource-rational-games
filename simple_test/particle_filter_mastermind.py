@@ -14,8 +14,9 @@ lambda_value = 1 # Expected valud of guess = EIG + lambda * p(correct)
 
 
 #SMC params
-num_particles = 100
+num_particles = 25
 mh_steps = 10  
+rejuvenate_prob = 0.5
 
 all_possible_codes = [tuple(code) for code in itertools.product(range(NUM_COLORS), repeat=CODE_LENGTH)]
 secret_code = random.choice(all_possible_codes)
@@ -36,14 +37,16 @@ def calculate_entropy(ps):
 class MastermindParticleFilter:
     def __init__(self, num_particles, rejuvenate_prob=0.1, flip_prob=0.25):
         self.num_particles = num_particles
-        self.particles = random.choices(all_possible_codes, k=num_particles)
-        self.weights = [1.0 / num_particles] * num_particles
-
         self.rejuvenate_prob = rejuvenate_prob
         self.flip_prob = flip_prob
-
+        self.particles = random.choices(all_possible_codes, k=num_particles)
+        self.weights = [1.0 / num_particles] * num_particles
+        self.last_guess = None
+        self.last_feedback = None
 
     def update(self, guess, feedback):
+        self.last_guess = guess
+        self.last_feedback = feedback
         new_weights = []
         for particle in self.particles:
             particle_feedback = compute_feedback(guess, particle)
@@ -57,6 +60,7 @@ class MastermindParticleFilter:
             self.weights = [w / total_weight for w in new_weights]
 
     def calculate_likelihood(self, particle_feedback, observed_feedback):
+        """Calculate likelihood with added noise."""
         if particle_feedback == observed_feedback:
             return 1.0 - noise_level
         else:
@@ -69,9 +73,8 @@ class MastermindParticleFilter:
         self.rejuvenate()
 
     def rejuvenate(self):
-        """MH rejuvenation on some codes."""
+        """MH rejuvenation on a random subset of codes."""
         num_rejuvenate = int(self.rejuvenate_prob * self.num_particles)
-
         indices_to_rejuvenate = random.sample(range(self.num_particles), num_rejuvenate)
 
         for _ in range(mh_steps):
@@ -79,17 +82,16 @@ class MastermindParticleFilter:
                 current_particle = self.particles[i]
                 proposed_particle = list(current_particle)
                 
-                # flip each bit (color) with a small probability
+                #flip each bit (color) with a small probability
                 for j in range(CODE_LENGTH):
                     if random.random() < self.flip_prob:
                         proposed_particle[j] = random.randint(0, NUM_COLORS - 1)
 
                 proposed_particle = tuple(proposed_particle)
-                # likelihood for current and proposed particles
-                current_feedback = compute_feedback(current_particle, secret_code)
-                proposed_feedback = compute_feedback(proposed_particle, secret_code)
-                current_likelihood = self.calculate_likelihood(current_feedback, current_feedback)
-                proposed_likelihood = self.calculate_likelihood(proposed_feedback, proposed_feedback)
+                current_feedback = compute_feedback(self.last_guess, current_particle)
+                proposed_feedback = compute_feedback(self.last_guess, proposed_particle)
+                current_likelihood = self.calculate_likelihood(current_feedback, self.last_feedback)
+                proposed_likelihood = self.calculate_likelihood(proposed_feedback, self.last_feedback)
 
                 acceptance_ratio = proposed_likelihood / current_likelihood if current_likelihood > 0 else 1
                 if random.random() < acceptance_ratio:
@@ -158,8 +160,8 @@ class MastermindParticleFilter:
         return top_guesses
 
 def simulate_game(secret_code):
-    pf = MastermindParticleFilter(num_particles)
-    attempts = 0
+    pf = MastermindParticleFilter(num_particles, rejuvenate_prob = rejuvenate_prob)
+    attempts = 1
 
     while True:
         entropy_prev = pf.calculate_current_entropy()  # Calculate entropy over unique codes
@@ -176,7 +178,7 @@ def simulate_game(secret_code):
         print("-" * 50)
 
         if feedback == (CODE_LENGTH, 0): 
-            print(f"Found the code in {attempts} attempts!")
+            print(f"Found code in {attempts} guesses.")
             break
 
         pf.update(guess, feedback)
