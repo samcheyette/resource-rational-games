@@ -9,12 +9,12 @@ NUM_COLORS = 4
 CODE_LENGTH = 4
 
 #agent params
-noise_level = 0.05 #likelihood noise
-lambda_value = 1 # Expected valud of guess = EIG + lambda * p(correct)
+noise_level = 0.01 # likelihood noise
+lambda_value = 1 # utility of guess = EIG + lambda * p(correct)
 
 
 #SMC params
-num_particles = 25
+num_particles = 50
 mh_steps = 10  
 rejuvenate_prob = 0.5
 
@@ -97,6 +97,7 @@ class MastermindParticleFilter:
                 if random.random() < acceptance_ratio:
                     self.particles[i] = proposed_particle
 
+
     def calculate_current_entropy(self):
         code_weights = Counter()
         for particle, weight in zip(self.particles, self.weights):
@@ -112,7 +113,7 @@ class MastermindParticleFilter:
         best_guess = None
         EIG_best = 0.0
         p_correct_best = 0.0
-        current_entropy = self.calculate_current_entropy()  # Calculate entropy over unique codes
+        current_entropy = self.calculate_current_entropy()  
         
         for guess in all_possible_codes:
             #simulate feedback for this guess
@@ -161,28 +162,37 @@ class MastermindParticleFilter:
 
 def simulate_game(secret_code):
     pf = MastermindParticleFilter(num_particles, rejuvenate_prob = rejuvenate_prob)
-    attempts = 1
+    attempt = 1
+
+    print(f"True code: {secret_code}")
+    print("")
 
     while True:
-        entropy_prev = pf.calculate_current_entropy()  # Calculate entropy over unique codes
-
+        entropy_prev = pf.calculate_current_entropy() 
         guess, current_entropy, expected_info_gain, correct_prob = pf.expected_utility(lambda_value)
         feedback = compute_feedback(guess, secret_code)
-        print(f"Guess: {guess}, Feedback: {feedback}")
+
+        print("="*50)
+        print(f"Attempt: {attempt}")
         print(f"Entropy: {entropy_prev: .2f}")
-        print(f"EIG: {expected_info_gain: .2f}")
-        print(f"P(correct): {correct_prob: .2f}")
+
         for c,np in pf.top_candidate_codes(5):
             print(c, round(np/num_particles,2))
+        print("")
+        print("-" * 50)
+        print(f"Guess: {guess}")
+        print(f"EIG: {expected_info_gain: .2f}")
+        print(f"P(correct): {correct_prob: .2f}")
+        print(f"Feedback: {feedback}")
 
         print("-" * 50)
-
+        print("")
         if feedback == (CODE_LENGTH, 0): 
-            print(f"Found code in {attempts} guesses.")
+            print(f"Found code in {attempt} guesses.")
             break
 
         pf.update(guess, feedback)
         pf.resample()
-        attempts += 1
+        attempt += 1
 
 simulate_game(secret_code)
