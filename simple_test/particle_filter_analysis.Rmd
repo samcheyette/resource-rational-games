@@ -132,4 +132,15 @@ ggplot(subset(df, (df$solved == 0) | (df$true_entropy_prev > 0)), aes(x = round(
   theme(axis.text.x = element_text(angle = 0), strip.text = element_text(size = 12))
 
 
+
+ggplot(subset(df, (df$solved == 0) | (df$true_entropy_prev > 0)), aes(x = round(EIG_gt_eq, 1), group = num_particles)) +
+  geom_bar(aes(y = ..prop..), stat = "count") +
+  paper_theme +
+  facet_wrap(~num_particles, nrow = 1) +
+  ylab("Proportion") + xlab("EIG quantile (gte)") +
+  scale_x_continuous(breaks=c(0,0.5, 1)) +
+  theme(axis.text.x = element_text(angle = 0), strip.text = element_text(size = 12))
+
+
+
 ```

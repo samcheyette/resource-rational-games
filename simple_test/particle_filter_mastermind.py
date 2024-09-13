@@ -123,11 +123,11 @@ class MastermindParticleFilter:
         self.num_particles = num_particles
 
         if num_particles <= len(all_possible_codes):
+            # Sample without replacement
             self.particles = random.sample(all_possible_codes, num_particles)
-
         else:
-            self.particles = random.choice(all_possible_codes, k=num_particles)
-
+            # Sample with replacement
+            self.particles = random.choices(all_possible_codes, k=num_particles)
         self.weights = [1.0 / num_particles] * num_particles
         self.last_guess = None
         self.last_feedback = None
@@ -207,6 +207,7 @@ def run_simulation(num_particles, lambda_value, secret_code):
         true_EIGs = compute_all_EIGs(all_possible_codes, true_consistent_codes )
         EIG_quantile = np.mean([1*(true_EIG > p_EIG) + 0.5 * (true_EIG == p_EIG) for p_EIG in true_EIGs])
         #EIG_quantile = np.mean([1*(true_EIG >= p_EIG) for p_EIG in true_EIGs])
+        EIG_gt_eq = np.mean([1*(true_EIG >= p_EIG) for p_EIG in true_EIGs])
 
 
         feedback = compute_feedback(best_guess, secret_code)
@@ -216,7 +217,9 @@ def run_simulation(num_particles, lambda_value, secret_code):
         pf.update(best_guess, feedback)
         pf.resample()
         model_entropy_post = calculate_entropy_of_beliefs(pf.particles, pf.weights)
-        print(attempt, secret_code, best_guess, round(true_EIG,2), round(model_EIG,2), round(EIG_quantile,2))
+        print(attempt, secret_code, best_guess,
+         round(true_EIG,2), round(model_EIG,2), 
+         round(EIG_quantile,2), round(EIG_gt_eq,2))
 
         result_rows.append({
             'guess_number': attempt,
@@ -230,7 +233,8 @@ def run_simulation(num_particles, lambda_value, secret_code):
             'model_entropy_post': model_entropy_post,
             'true_EIG': true_EIG,
             'model_EIG': model_EIG,
-            'EIG_quantile': EIG_quantile
+            'EIG_quantile': EIG_quantile,
+            'EIG_gt_eq': EIG_gt_eq
                     })
 
         if feedback == (CODE_LENGTH, 0):
@@ -266,5 +270,5 @@ def simulate_all_and_write_to_csv(n_particles, lambda_value=1, n_sims=25):
             print("")
             r_id += 1
 
-n_particles = [1,4,8,16,64,256]
+n_particles = [1,4,16,64,256]
 simulate_all_and_write_to_csv( n_particles, n_sims=100)
