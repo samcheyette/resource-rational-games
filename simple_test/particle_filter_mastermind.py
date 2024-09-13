@@ -2,24 +2,32 @@ import random
 from collections import Counter
 import itertools
 import math
-
-
+import csv
+import copy
+import numpy as np
 
 NUM_COLORS = 4
 CODE_LENGTH = 4
 
-#agent params
-noise_level = 0.01 # likelihood noise
-lambda_value = 1 # utility of guess = EIG + lambda * p(correct)
+# agent parameters
+lambda_value = 1  # utility of guess = EIG + lambda * p(correct)
+max_guesses = 15  # ;imit the number of guesses
 
 
-#SMC params
-num_particles = 50
-mh_steps = 10  
-rejuvenate_prob = 0.5
+all_possible_codes = [tuple(code) for code in itertools.product(range(1, NUM_COLORS + 1), repeat=CODE_LENGTH)]
 
-all_possible_codes = [tuple(code) for code in itertools.product(range(NUM_COLORS), repeat=CODE_LENGTH)]
-secret_code = random.choice(all_possible_codes)
+
+
+def stimuli_to_csv(dcts, csv_file):
+    with open(csv_file, 'w', newline='') as csvfile:
+        writer = None
+
+        for dct in dcts:
+            if writer is None:
+                fieldnames = list(dct.keys())
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+            writer.writerow(dct)
 
 def compute_feedback(guess, code):
     black_pegs = sum(g == c for g, c in zip(guess, code))
@@ -27,19 +35,99 @@ def compute_feedback(guess, code):
     white_pegs = both - black_pegs
     return black_pegs, white_pegs
 
-def calculate_entropy(ps):
+def calculate_entropy(probabilities):
     entropy = 0.0
-    for p in ps:
+    for p in probabilities:
         if p > 0:
             entropy -= p * math.log2(p)
     return entropy
 
+def get_beliefs_distribution(codes, weights=None):
+    if weights:
+        total_weight = sum(weights)
+        normalized_weights = [w / total_weight for w in weights]
+    else:
+        normalized_weights = [1 / len(codes)] * len(codes)
+    return normalized_weights
+
+
+def calculate_entropy_of_beliefs(codes, weights=None):
+
+    #counts the occurrences or sum weights for each unique code
+    code_weights = Counter()
+    
+    if weights:
+        for code, weight in zip(codes, weights):
+            code_weights[code] += weight
+    else:
+        for code in codes:
+            code_weights[code] += 1
+
+
+    
+    total_weight = sum(code_weights.values())
+    probabilities = [w / total_weight for w in code_weights.values()]
+
+    # for code in codes:
+    #     print(code, code_weights[code])
+    
+    return calculate_entropy(probabilities)
+
+def calculate_expected_info_gain(guess, codes, weights=None):
+    feedback_distribution = Counter(compute_feedback(guess, code) for code in codes)
+    feedback_probs = {feedback: count / len(codes) for feedback, count in feedback_distribution.items()}
+
+    current_entropy = calculate_entropy_of_beliefs(codes, weights)
+
+    expected_info_gain = 0.0
+
+    for feedback, prob in feedback_probs.items():
+        consistent_codes = [code for code in codes if compute_feedback(guess, code) == feedback]
+        new_weights = get_beliefs_distribution(consistent_codes)
+
+        new_entropy = calculate_entropy_of_beliefs(consistent_codes, new_weights)
+        expected_info_gain += prob * (current_entropy - new_entropy)
+
+    return expected_info_gain
+
+
+def compute_all_EIGs(codes, particles, weights=None):
+
+    EIGs = []
+    
+    for guess in codes:
+        EIG = calculate_expected_info_gain(guess, particles, weights)
+        EIGs.append(EIG)
+    
+    return EIGs
+
+
+def calculate_expected_utility(guess, codes, weights=None, lambda_value=1):
+    expected_info_gain = calculate_expected_info_gain(guess, codes, weights)
+
+    # probability that this guess is correct
+    correct_prob = sum(
+        (1 if compute_feedback(guess, code) == (CODE_LENGTH, 0) else 0) for code in codes
+    )
+    correct_prob /= len(codes)
+
+    # utility is the weighted sum of correct probability and expected information gain
+    utility = lambda_value * correct_prob + expected_info_gain
+
+    return utility, expected_info_gain, correct_prob
+
+
+
 class MastermindParticleFilter:
-    def __init__(self, num_particles, rejuvenate_prob=0.1, flip_prob=0.25):
+    def __init__(self, num_particles):
         self.num_particles = num_particles
-        self.rejuvenate_prob = rejuvenate_prob
-        self.flip_prob = flip_prob
-        self.particles = random.choices(all_possible_codes, k=num_particles)
+
+        if num_particles <= len(all_possible_codes):
+            self.particles = random.sample(all_possible_codes, num_particles)
+
+        else:
+            self.particles = random.choice(all_possible_codes, k=num_particles)
+
         self.weights = [1.0 / num_particles] * num_particles
         self.last_guess = None
         self.last_feedback = None
@@ -47,152 +135,136 @@ class MastermindParticleFilter:
     def update(self, guess, feedback):
         self.last_guess = guess
         self.last_feedback = feedback
+
         new_weights = []
         for particle in self.particles:
             particle_feedback = compute_feedback(guess, particle)
-            likelihood = self.calculate_likelihood(particle_feedback, feedback)
+            likelihood = 1.0 if particle_feedback == feedback else 0.0
             new_weights.append(likelihood)
-        
+
         total_weight = sum(new_weights)
         if total_weight == 0:
-            self.weights = [1.0 / self.num_particles] * self.num_particles
+            self.weights = [0.0] * self.num_particles
         else:
             self.weights = [w / total_weight for w in new_weights]
 
-    def calculate_likelihood(self, particle_feedback, observed_feedback):
-        """Calculate likelihood with added noise."""
-        if particle_feedback == observed_feedback:
-            return 1.0 - noise_level
-        else:
-            return noise_level / (len(all_possible_codes) - 1)
-
     def resample(self):
-        new_particles = random.choices(self.particles, weights=self.weights, k=self.num_particles)
-        self.particles = new_particles
-        self.weights = [1.0 / self.num_particles] * self.num_particles
-        self.rejuvenate()
+        """Resample particles and rejuvenate if all weights are 0."""
+        if all(w == 0.0 for w in self.weights):
+            self.rejuvenate(entire_set=True)  #Directly rejuvenate the entire particle set
+        else:
+            # Resample as normal
+            new_particles = random.choices(self.particles, weights=self.weights, k=self.num_particles)
+            self.particles = new_particles
+            self.weights = [1.0 / self.num_particles] * self.num_particles
+            self.rejuvenate()
 
-    def rejuvenate(self):
-        """MH rejuvenation on a random subset of codes."""
-        num_rejuvenate = int(self.rejuvenate_prob * self.num_particles)
-        indices_to_rejuvenate = random.sample(range(self.num_particles), num_rejuvenate)
+    def rejuvenate(self, entire_set=False):
+        """Rejuvenate particles with zero weights or the entire set."""
+        if entire_set:
+            # Rejuvenate the entire particle set
+            rejuvenate_indices = range(self.num_particles)
+        else:
+            # Rejuvenate only particles with zero weights
+            rejuvenate_indices = [i for i, w in enumerate(self.weights) if w == 0.0]
 
-        for _ in range(mh_steps):
-            for i in indices_to_rejuvenate:
-                current_particle = self.particles[i]
-                proposed_particle = list(current_particle)
-                
-                #flip each bit (color) with a small probability
-                for j in range(CODE_LENGTH):
-                    if random.random() < self.flip_prob:
-                        proposed_particle[j] = random.randint(0, NUM_COLORS - 1)
+        if not self.last_guess or not self.last_feedback:
+            return  # Can't rejuvenate without a prior guess and feedback
 
-                proposed_particle = tuple(proposed_particle)
-                current_feedback = compute_feedback(self.last_guess, current_particle)
-                proposed_feedback = compute_feedback(self.last_guess, proposed_particle)
-                current_likelihood = self.calculate_likelihood(current_feedback, self.last_feedback)
-                proposed_likelihood = self.calculate_likelihood(proposed_feedback, self.last_feedback)
+        consistent_codes = [
+            code for code in all_possible_codes
+            if compute_feedback(self.last_guess, code) == self.last_feedback
+        ]
 
-                acceptance_ratio = proposed_likelihood / current_likelihood if current_likelihood > 0 else 1
-                if random.random() < acceptance_ratio:
-                    self.particles[i] = proposed_particle
+        if consistent_codes:
+            for i in rejuvenate_indices:
+                self.particles[i] = random.choice(consistent_codes)
+                self.weights[i] = 1.0 / self.num_particles
 
-
-    def calculate_current_entropy(self):
-        code_weights = Counter()
-        for particle, weight in zip(self.particles, self.weights):
-            code_weights[particle] += weight
-        
-        total_weight = sum(code_weights.values())
-        normalized_weights = [w / total_weight for w in code_weights.values()]
-        return calculate_entropy(normalized_weights)
-
-    def expected_utility(self, lambda_value):
-        """Compute the expected utility for each possible guess and return the best guess."""
-        max_utility = -float('inf')
-        best_guess = None
-        EIG_best = 0.0
-        p_correct_best = 0.0
-        current_entropy = self.calculate_current_entropy()  
-        
-        for guess in all_possible_codes:
-            #simulate feedback for this guess
-            feedback_distribution = Counter()
-            for particle in self.particles:
-                feedback = compute_feedback(guess, particle)
-                feedback_distribution[feedback] += 1
-            
-            total_count = sum(feedback_distribution.values())
-            feedback_probs = {feedback: count / total_count for feedback, count in feedback_distribution.items()}
-            
-            expected_info_gain = 0.0
-            for feedback, prob in feedback_probs.items():
-                new_weights = [
-                    self.calculate_likelihood(compute_feedback(guess, particle), feedback) * weight
-                    for particle, weight in zip(self.particles, self.weights)
-                ]
-                total_new_weights = sum(new_weights)
-                if total_new_weights > 0:
-                    new_code_weights = Counter()
-                    for particle, new_weight in zip(self.particles, new_weights):
-                        new_code_weights[particle] += new_weight
-                    normalized_new_weights = [w / total_new_weights for w in new_code_weights.values()]
-                    new_entropy = calculate_entropy(normalized_new_weights)
-                    expected_info_gain += prob * (current_entropy - new_entropy)
-            
-            correct_prob = sum(
-                self.calculate_likelihood(compute_feedback(guess, particle), (CODE_LENGTH, 0)) * weight
-                for particle, weight in zip(self.particles, self.weights)
-            )
-
-            utility = lambda_value * correct_prob + expected_info_gain
-            if utility > max_utility:
-                max_utility = utility
-                best_guess = guess
-                EIG_best = expected_info_gain
-                p_correct_best = correct_prob
-
-        return best_guess, current_entropy, EIG_best, p_correct_best
-
-    def top_candidate_codes(self, top_n=5):
-        """Return the top N candidate codes based on particle weights."""
-        guess_counts = Counter(self.particles)
-        top_guesses = guess_counts.most_common(top_n)
-        return top_guesses
-
-def simulate_game(secret_code):
-    pf = MastermindParticleFilter(num_particles, rejuvenate_prob = rejuvenate_prob)
+def run_simulation(num_particles, lambda_value, secret_code):
+    pf = MastermindParticleFilter(num_particles)
     attempt = 1
 
-    print(f"True code: {secret_code}")
-    print("")
+    true_consistent_codes = all_possible_codes.copy()
 
-    while True:
-        entropy_prev = pf.calculate_current_entropy() 
-        guess, current_entropy, expected_info_gain, correct_prob = pf.expected_utility(lambda_value)
-        feedback = compute_feedback(guess, secret_code)
 
-        print("="*50)
-        print(f"Attempt: {attempt}")
-        print(f"Entropy: {entropy_prev: .2f}")
 
-        for c,np in pf.top_candidate_codes(5):
-            print(c, round(np/num_particles,2))
-        print("")
-        print("-" * 50)
-        print(f"Guess: {guess}")
-        print(f"EIG: {expected_info_gain: .2f}")
-        print(f"P(correct): {correct_prob: .2f}")
-        print(f"Feedback: {feedback}")
+    result_rows = []
+    while attempt <= max_guesses:
+        true_entropy_prev = calculate_entropy_of_beliefs(true_consistent_codes)
+        model_entropy_prev = calculate_entropy_of_beliefs(pf.particles, pf.weights)
 
-        print("-" * 50)
-        print("")
-        if feedback == (CODE_LENGTH, 0): 
-            print(f"Found code in {attempt} guesses.")
+        best_guess, model_EIG, model_p_correct = None, -float('inf'), 0
+        for guess in all_possible_codes:
+            utility, EIG, p_correct = calculate_expected_utility(guess, pf.particles, pf.weights, lambda_value)
+            if utility > model_EIG:
+                best_guess, model_EIG, model_p_correct = guess, EIG, p_correct
+
+
+
+        #true_EIG, true_EIGs, EIG_quantile, true_entropy_post = 0,0,0,0
+        true_EIG = calculate_expected_info_gain(best_guess, true_consistent_codes)
+        true_EIGs = compute_all_EIGs(all_possible_codes, true_consistent_codes )
+        EIG_quantile = np.mean([1*(true_EIG > p_EIG) + 0.5 * (true_EIG == p_EIG) for p_EIG in true_EIGs])
+        #EIG_quantile = np.mean([1*(true_EIG >= p_EIG) for p_EIG in true_EIGs])
+
+
+        feedback = compute_feedback(best_guess, secret_code)
+        true_consistent_codes = [code for code in true_consistent_codes if compute_feedback(best_guess, code) == feedback]
+
+        true_entropy_post = true_entropy_prev - true_EIG
+        pf.update(best_guess, feedback)
+        pf.resample()
+        model_entropy_post = calculate_entropy_of_beliefs(pf.particles, pf.weights)
+        print(attempt, secret_code, best_guess, round(true_EIG,2), round(model_EIG,2), round(EIG_quantile,2))
+
+        result_rows.append({
+            'guess_number': attempt,
+            'num_particles': num_particles,
+            'lambda_value': lambda_value,
+            'true_code': secret_code,
+            'guess': best_guess,
+            'true_entropy_prev': true_entropy_prev,
+            'true_entropy_post': true_entropy_post,
+            'model_entropy_prev': model_entropy_prev,
+            'model_entropy_post': model_entropy_post,
+            'true_EIG': true_EIG,
+            'model_EIG': model_EIG,
+            'EIG_quantile': EIG_quantile
+                    })
+
+        if feedback == (CODE_LENGTH, 0):
+            print(f"Code found in {attempt} guesses!")
             break
 
-        pf.update(guess, feedback)
-        pf.resample()
         attempt += 1
 
-simulate_game(secret_code)
+    if attempt > max_guesses:
+        print("Game over: Maximum guesses reached.")
+
+
+    return result_rows
+
+def simulate_all_and_write_to_csv(n_particles, lambda_value=1, n_sims=25):
+
+    r_id = 0
+    results = []
+
+    for _ in range(n_sims):
+        secret_code = random.choice(all_possible_codes)
+
+        for n_p in n_particles:
+            print("="*50)
+            print("")
+            print(f"Running simulation with {n_p} particles...")
+            dcts =  run_simulation(n_p, lambda_value, secret_code)
+            for dct in dcts:
+                dct["r_id"] = r_id
+                results += [dct]
+            stimuli_to_csv(results, "mastermind_PF.csv")
+            print("="*50)
+            print("")
+            r_id += 1
+
+n_particles = [1,4,8,16,64,256]
+simulate_all_and_write_to_csv( n_particles, n_sims=100)
