@@ -3,32 +3,19 @@ from utils import *
 from itertools import product
 from collections import defaultdict
 
-#alpha = 100
 
-sm = 1e-10
-N, K = 3,3
-lam = 10 # value of correct answer (relative to 1 bit of info)
+sm = 1e-10 
+N, K = 4,3 #colors/ positions in mastermind
+lam = 1 # value of correct answer (relative to 1 bit of info)
+alpha = 10 #how lossy are we willing to be? higher alpha -> less lossy
+
 grammar = make_mastermind_grammar(N, K)
 codes = get_all_codes(N, K)
 
 
-def get_program_likelihood(true_posterior_predictive, program, history,n=250):
-
-
-    p_generate_codes = np.ones(len(codes)) * sm
-    for _ in range(n):
-        output = program.execute()
-        index = array_to_unique_value(output, K)
-        p_generate_codes[index] += 1
-    p_generate_codes = normalize(p_generate_codes)
-    kl = compute_KL(p_generate_codes, true_posterior_predictive)
-    return -kl
-
-
-
-
 
 def get_program_likelihood_abc(program, history, alpha = 1, n=250):
+    """ NOT USED but: assumes you just want to find a program which does not conflict with the data.""" 
 
     lkhd, same_overlap_lst = 1, []
     for _ in range(n):
@@ -51,6 +38,26 @@ def get_program_likelihood_abc(program, history, alpha = 1, n=250):
         return alpha*log(lkhd)
 
 
+
+
+def get_program_likelihood(true_posterior_predictive, program, history, alpha=1, n=250):
+
+    """ Minimize KL from program-posterior to true posterior """ 
+
+
+    p_generate_codes = np.ones(len(codes)) * sm
+    for _ in range(n):
+        output = program.execute()
+        index = array_to_unique_value(output, K)
+        p_generate_codes[index] += 1
+    p_generate_codes = normalize(p_generate_codes)
+    kl = compute_KL(p_generate_codes, true_posterior_predictive)
+    return -alpha * kl
+
+
+
+
+
 def sample_program_posterior_predictive(program, sm = (1/K**N), n=250):
 
 
@@ -66,6 +73,8 @@ def sample_program_posterior_predictive(program, sm = (1/K**N), n=250):
 
 
 def get_EVs(guesses, codes, priors, lam=1):
+
+    """ Computes expected value of each possible query""" 
     EVs = []
     for i in range(len(codes)):
 
@@ -79,8 +88,10 @@ def get_EVs(guesses, codes, priors, lam=1):
 
 
 
-def resample_program(program, log_prior, history, true_posterior_predictive, n_steps=1000, verbose=True):
-    log_lkhd = get_program_likelihood(true_posterior_predictive, program, history)
+def resample_program(program, log_prior, history, true_posterior_predictive,alpha=1, n_steps=1000,  verbose=True):
+    """Let's find ourselves some better beliefs.""" 
+
+    log_lkhd = get_program_likelihood(true_posterior_predictive, program, history, alpha)
     program_posterior = log_lkhd + log_prior
 
 
@@ -89,13 +100,13 @@ def resample_program(program, log_prior, history, true_posterior_predictive, n_s
             prop_program, prop_log_prior = sample(grammar)
         else:
             prop_program, prop_log_prior = resample_random_subtree(grammar, copy.deepcopy(program))
-        prop_log_lkhd = get_program_likelihood(true_posterior_predictive, prop_program, history)
+        prop_log_lkhd = get_program_likelihood(true_posterior_predictive, prop_program, history, alpha)
 
         prop_posterior = prop_log_prior + prop_log_lkhd
 
         if prop_posterior > program_posterior:
             program = copy.deepcopy(prop_program)
-            log_lkhd = get_program_likelihood(true_posterior_predictive, prop_program, history)
+            log_lkhd = get_program_likelihood(true_posterior_predictive, prop_program, history, alpha)
 
             log_prior = prop_log_prior
             log_lkhd = prop_log_lkhd
@@ -122,7 +133,7 @@ def resample_program(program, log_prior, history, true_posterior_predictive, n_s
 
 history = []
 
-true_code = (2,2,2)
+true_code = (2,2,2,2)
 n_steps = 1000
 
 true_posterior_predictive = normalize(np.ones(len(codes)))
@@ -134,7 +145,7 @@ program_posterior = log_prior + log_lkhd
 for guess_number in range(5):
 
 
-    program, log_prior, log_lkhd, program_posterior = resample_program(program, log_prior, history, true_posterior_predictive, n_steps=n_steps)
+    program, log_prior, log_lkhd, program_posterior = resample_program(program, log_prior, history, true_posterior_predictive, alpha=alpha, n_steps=n_steps)
     program_posterior_predictive = sample_program_posterior_predictive( program, n=250)
     print(round(log_prior,2), round(log_lkhd,2), round(program_posterior,2), program)
     print("")
