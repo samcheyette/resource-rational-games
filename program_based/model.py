@@ -5,7 +5,7 @@ from collections import defaultdict
 
 
 sm = 1e-10 
-N, K = 4,3 #colors/ positions in mastermind
+N, K = 3,3 #colors/ positions in mastermind
 lam = 1 # value of correct answer (relative to 1 bit of info)
 alpha = 10 #how lossy are we willing to be? higher alpha -> less lossy
 
@@ -133,8 +133,8 @@ def resample_program(program, log_prior, history, true_posterior_predictive,alph
 
 history = []
 
-true_code = (2,2,2,2)
-n_steps = 1000
+true_code = (2,2,2)
+n_steps = 2000
 
 true_posterior_predictive = normalize(np.ones(len(codes)))
 program, log_prior = sample(grammar)

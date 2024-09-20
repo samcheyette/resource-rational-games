@@ -55,7 +55,7 @@ def make_mastermind_grammar(N, K):
                      args = {"rvs": lambda: st.randint.rvs(1, K+1),
                              "logpmf": lambda k: st.randint.logpmf(k, 1, K+1)})
     
-    grammar.add_rule("Element", "If", ["Bool", "Element", "Element"], p=0.1)
+    grammar.add_rule("Element", "If", ["Bool", "Element", "Element"], p=0.25)
 
     grammar.add_rule("Element", "Categorical", ["Dirichlet"], p=1.0)
 
@@ -70,7 +70,7 @@ def make_mastermind_grammar(N, K):
     grammar.add_rule("Dist", "Repeat", ["Element"], p=1.0, 
                                                     args = {"N":N})
 
-    grammar.add_rule("Dist", "If", ["Bool", "Dist", "Dist"], p=0.1)
+    grammar.add_rule("Dist", "If", ["Bool", "Dist", "Dist"], p=0.25)
 
     grammar.add_rule("Bool", "Flip", [], p=1)
 
