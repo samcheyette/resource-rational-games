@@ -270,5 +270,5 @@ def simulate_all_and_write_to_csv(n_particles, lambda_value=1, n_sims=25):
             print("")
             r_id += 1
 
-n_particles = [1,4,16,64,256]
+n_particles = [1,2,4,8,16,32,64]
 simulate_all_and_write_to_csv( n_particles, n_sims=100)

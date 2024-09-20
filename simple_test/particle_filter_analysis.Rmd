@@ -50,7 +50,7 @@ panel.background = element_rect(fill = "white", colour = "grey50"),
 df <- read.csv("mastermind_PF.csv")
 
 df <- df %>%
-        filter(round(log(num_particles, base=4)) == log(num_particles, base=4)) %>%
+        #filter(round(log(num_particles, base=4)) == log(num_particles, base=4)) %>%
           group_by(r_id) %>%
 
       mutate(solved = 1*(true_code == guess)) %>%
@@ -103,7 +103,7 @@ p1 <- ggplot(data=df_sub, aes(x=num_particles, y=guess_number)) +
 
 # Second plot (EIG quantile)
 p2 <- ggplot(data=subset(df, (df$solved == 0) | (df$true_entropy_prev > 0)), aes(x=num_particles, y=EIG_quantile)) +
-  geom_hline(yintercept=0.5) +
+  geom_hline(yintercept=0.5, linetype="dotted") +
   stat_summary(fun.data="mean_se", geom="errorbar", width=0.01) +
   stat_summary(fun="mean", geom="point", size=2) +
   stat_summary(fun="mean", geom="point", size=1, color="white") +
@@ -118,6 +118,40 @@ combined_plot <- p1 + p2 + plot_layout(nrow = 1)
 combined_plot
 
 ```
+
+
+
+
+
+
+```{r, fig.width=8, fig.height=3}
+
+# First plot (Number of guesses)
+p1 <- ggplot(data=df_sub, aes(x=num_particles, y=guess_number, group=num_particles)) +
+  geom_boxplot(outliers=FALSE) +
+  geom_hline(yintercept=3.4, linetype="dotted") +
+
+  scale_x_continuous(trans = "log10", breaks = unique(df_sub$num_particles), labels = unique(df_sub$num_particles)) +
+  paper_theme +
+  xlab("Particles") + ylab("Number of guesses")
+
+# Second plot (EIG quantile)
+p2 <- ggplot(data=subset(df, (df$solved == 0) | (df$true_entropy_prev > 0)), aes(x=num_particles, y=EIG_quantile, group=num_particles)) +
+  geom_boxplot(outliers=FALSE) +
+  geom_hline(yintercept=0.5, linetype="dotted") +
+
+  ylab("EIG quantile") + xlab("Particles") +
+  scale_x_continuous(trans = "log10", breaks = unique(df_sub$num_particles), labels = unique(df_sub$num_particles)) +
+  paper_theme
+
+# Combine the two plots side by side using patchwork
+combined_plot <- p1 + p2 + plot_layout(nrow = 1)
+
+# Print the combined plot
+combined_plot
+
+```
+
 
 ```{r,  fig.width=9, fig.height=2}
 
