@@ -57,12 +57,13 @@ def make_mastermind_grammar(N, K):
     
     grammar.add_rule("Element", "If", ["Bool", "Element", "Element"], p=0.25)
 
-    grammar.add_rule("Element", "Categorical", ["Dirichlet"], p=1.0)
+    grammar.add_rule("Element", "Categorical", ["Dirichlet"], p=1/K)
 
     grammar.add_rule("Dirichlet", "Dirichlet", [], p=1.0,                 
                             args = {"rvs": lambda:  st.dirichlet.rvs(np.ones(K)),
-                            #"logpdf": lambda ps: 0})
-                             "logpdf": lambda ps: log(dirichlet_bin_probability(ps, np.ones(K)))})
+                            "logpdf": lambda ps: 0}) # uniform prior so we don't have to really deal with 
+                                                    # nasty continuous variables (for now)
+                             #"logpdf": lambda ps: log(dirichlet_bin_probability(ps, np.ones(K)))})
 
     grammar.add_rule("Dist", "Tuple", ["Element" for _ in range(N)], p=1.0)
 

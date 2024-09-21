@@ -165,3 +165,30 @@ def get_EIG(guess, codes, prior):
             EIG += prior[i] * KL
 
     return EIG
+
+
+
+def get_rate_of_change(values, recency_factor=1.0):
+    """
+    Estimate the rate of change (slope) of a monotonically increasing list.
+    """
+    n = len(values)
+    if n < 2:
+        raise ValueError("The list must contain at least two elements to estimate the rate of change.")
+
+    x = np.arange(n)
+
+    weights = np.exp(recency_factor * (x - n + 1))
+
+    weights /= weights.sum()
+
+    weighted_x_mean = np.sum(weights * x)
+    weighted_y_mean = np.sum(weights * values)
+
+    weighted_cov_xy = np.sum(weights * (x - weighted_x_mean) * (values - weighted_y_mean))
+    weighted_var_x = np.sum(weights * (x - weighted_x_mean) ** 2)
+
+    slope = weighted_cov_xy / weighted_var_x if weighted_var_x != 0 else 0
+
+    return slope
+
