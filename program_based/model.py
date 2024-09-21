@@ -5,7 +5,7 @@ from collections import defaultdict
 
 
 sm = 1e-10 
-N, K = 3,3 #colors/ positions in mastermind
+N, K = 4,3 #colors/ positions in mastermind
 lam = 1 # value of correct answer (relative to 1 bit of info)
 alpha = 100 #how lossy are we willing to be? higher alpha -> less lossy
 
@@ -183,7 +183,7 @@ def resample_program(program, log_prior, history,
 
 
 
-true_code = (3,2,3)
+true_code = (2,2,3,3)
 
 history = []
 true_posterior_predictive = normalize(np.ones(len(codes)))
@@ -222,3 +222,7 @@ for guess_number in range(5):
     print(f"Guess number: {guess_number+1}")
     print(true_code, guess, feedback)
     print("")
+
+    if true_code == guess:
+        print("Game over!")
+        break
